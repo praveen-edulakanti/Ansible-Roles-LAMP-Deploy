@@ -1,0 +1,83 @@
+---
+ - hosts: webserver
+   become: true
+   tasks:
+           - name: 1. install Apache
+             apt: name=apache2 state=present
+
+           - name: 2. install PHP module for Apache
+             apt: name=php state=present
+
+           - name: Install PHP CLI
+             apt:
+               name: php-cli
+               state: latest  
+
+           - name: Install PHP Mysql
+             apt:
+               name: php-mysql
+               state: latest    
+
+           - name: 3. start Apache
+             service: name=apache2 state=restarted enabled=yes
+
+           - name: 4. clean /var/www/html folder
+             shell: /bin/rm -rf /var/www/html/*
+             
+           - git:
+               repo: 'https://github.com/praveen-edulakanti/user.git'
+               dest: /var/www/html/
+               force: yes
+
+           - name: DB Connection Configuration
+             become: yes
+             become_user: root
+             tags: appconfig
+             lineinfile:
+               path: /var/www/html/config.php
+               # The String to Search
+               regexp: "localhost"
+               # The String to Replace
+               line: "define('DB_SERVER', '13.232.28.59');"
+               state: present
+               backup: yes
+             
+
+ - hosts: dbserver
+   become: true
+   tasks:
+           - name: Update APT package manager repositories cache
+             become: true
+             apt:
+               update_cache: yes
+
+           - name: 1. Install mysql server package
+             apt: name=mysql-server state=present
+
+           - name: mysql configuration
+             lineinfile:
+               path: /etc/mysql/mysql.conf.d/mysqld.cnf
+               # The String to Search
+               regexp: "bind-address" 
+               # The String to Replace
+               line: "bind-address            = 0.0.0.0"
+               state: present
+               backup: yes
+           
+           - name: 2. Start Mysql Service
+             service: name=mysql state=started enabled=true
+
+           - name: Install python Mysql package #required for mysql_db tasks 
+             apt: name=python-mysqldb state=present
+           
+           - name: 3. Create a new database
+             mysql_db: name=demo state=present collation=utf8_general_ci
+           
+           - name: 4. Create a database user
+             mysql_user: name=remoteusr password=remotepwd priv=*.*:ALL host=% state=present
+           
+           - name: 5a. Copy sample data
+             copy: src=users.sql dest=/tmp/users.sql
+           
+           - name: 5b. Insert sample data
+             shell: cat /tmp/users.sql | mysql -u remoteusr -premotepwd demo
